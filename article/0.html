@@ -1,0 +1,522 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title> Solana Slp Token program </title><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv="X-UA-Compatible" content="ie=edge"><link rel="shortcut icon" href="/favicon.a35c33cf.ico" type="image/x-icon"><link rel="stylesheet" href="/init.1321c284.css"><link rel="stylesheet" href="/article.df3435a8.css"></head><body> <header id="top-container" role="navigation"> </header> <main id="main-container"> <article id="article-container"> <h1 id="article-title"> Solana Slp Token program </h1> <h2 id="article-subtitle"> I will deconstruct slp token program to undertand how you can create tokens and uses it with all the functionality of the ERC1155 like standard </h2> <time id="article-date"> 2021.09.11 </time> <section id="article-content-container"> <details><summary>Table of Contents</summary>
+<p><div class="table-of-contents"><ul><li><a href="#slp-program">slp program</a><ul><li><a href="#basic-architecture-of-a-smart-contract-in-solana">Basic Architecture of a smart contract in solana</a></li><li><a href="#solana_program-crate">solana_program crate</a><ul><li><a href="#account_info">account_info</a></li><li><a href="#instruction">instruction</a></li><li><a href="#entrypoint">entrypoint</a></li><li><a href="#pubkey">pubKey</a></li><li><a href="#sysvar">sysvar</a></li><li><a href="#program_pack">program_pack</a></li><li><a href="#msg">msg</a></li><li><a href="#program_option">program_option</a></li><li><a href="#program_error">program_error</a></li><li><a href="#decode_error">decode_error</a></li></ul></li><li><a href="#lib.rs">lib.rs</a></li><li><a href="#entrypoint.rs">entrypoint.rs</a></li><li><a href="#error.rs">error.rs</a></li><li><a href="#state.rs">state.rs</a></li><li><a href="#instruction.rs">instruction.rs</a></li><li><a href="#processor.rs">processor.rs</a></li></ul></li></ul></div></p>
+</details>
+<h1 id="slp-program">slp program</h1>
+<h2 id="basic-architecture-of-a-smart-contract-in-solana">Basic Architecture of a smart contract in solana</h2>
+<p>We must undertand in first place that a smart contract is a system program in the blockchain. Like all programs it need space to locate the program itself and some space for the state. Knowing this we can undertand that a smart contract is a program locate in a blockchain that have a data. In solana the locating of data are accounts. Accounts are space in the blockchain with pairkeys to access it. Accounts in solana has a rent system that you must paid periodly to life in the blockchain. So, we will play with a lot of accounts and the ownership of them to make transactions, locate metadata and so on. In solana smart contract development when we are making transactions we will use all accounts inplicated in that transaction, so we must validate all accounts that we recieve.</p>
+<blockquote>
+<p>You can check in solana.docs: <a href="https://docs.solana.com/developing/programming-model/accounts">https://docs.solana.com/developing/programming-model/accounts</a></p>
+</blockquote>
+<p>Ones we got the basics about how accounts works in solana we can start speaking about the programming model.
+You need to undertand that we are creating a system program in a blockchain and a client we will send instructions that the system uses to make transactions.</p>
+<p>How does it works, ok it is a complex process but i think is easy to undertand:</p>
+<ul>
+<li>From the client site you will craft instructions that you will serialize and send it to our program in the blockchain</li>
+<li>The program recieve a buch of bytes that will deserialize and try to process it. If it match we some instruction that it has, it will process the instruction modifiying it state.</li>
+</ul>
+<p>So in our program we will have an lib, entrypoint, error enums, instructions, processor and a state.</p>
+<h2 id="solana_program-crate">solana_program crate</h2>
+<p>solana_program crate is the main library that you will use to develop vanilla smart contract in solana. For that we must be comfortable with this library and undertand what it does and how use it. Let’s start:</p>
+<h3 id="account_info">account_info</h3>
+<p>There are two main points that you must undertand from solana_program::account_info and it is that is the struct AccountInfo and function next_account_info:</p>
+<ul>
+<li>AccountInfo has all the data that a account in solana has.</li>
+</ul>
+<pre class="hljs"><code><span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">AccountInfo</span></span>&lt;<span class="hljs-symbol">&#x27;a</span>&gt; {
+    <span class="hljs-keyword">pub</span> key: &amp;<span class="hljs-symbol">&#x27;a</span> Pubkey,
+    <span class="hljs-keyword">pub</span> is_signer: <span class="hljs-built_in">bool</span>,
+    <span class="hljs-keyword">pub</span> is_writable: <span class="hljs-built_in">bool</span>,
+    <span class="hljs-keyword">pub</span> lamports: Rc&lt;RefCell&lt;&amp;<span class="hljs-symbol">&#x27;a</span> <span class="hljs-keyword">mut</span> <span class="hljs-built_in">u64</span>&gt;&gt;,
+    <span class="hljs-keyword">pub</span> data: Rc&lt;RefCell&lt;&amp;<span class="hljs-symbol">&#x27;a</span> <span class="hljs-keyword">mut</span> [<span class="hljs-built_in">u8</span>]&gt;&gt;,
+    <span class="hljs-keyword">pub</span> owner: &amp;<span class="hljs-symbol">&#x27;a</span> Pubkey,
+    <span class="hljs-keyword">pub</span> executable: <span class="hljs-built_in">bool</span>,
+    <span class="hljs-keyword">pub</span> rent_epoch: Epoch,
+}
+</code></pre>
+<p>Fields</p>
+<p>key: &amp;'a Pubkey
+Public key of the account</p>
+<p>is_signer: bool
+Was the transaction signed by this account’s public key?</p>
+<p>is_writable: bool
+Is the account writable?</p>
+<p>lamports: Rc&lt;RefCell&lt;&amp;'a mut u64&gt;&gt;
+The lamports in the account. Modifiable by programs.</p>
+<p>data: Rc&lt;RefCell&lt;&amp;'a mut [u8]&gt;&gt;
+The data held in this account. Modifiable by programs.</p>
+<p>owner: &amp;'a Pubkey
+Program that owns this account</p>
+<p>executable: bool
+This account’s data contains a loaded program (and is now read-only)</p>
+<p>rent_epoch: Epoch
+The epoch at which this account will next owe rent</p>
+<ul>
+<li>next_account_info() just iter in and account array.</li>
+</ul>
+<blockquote>
+<p>You can find more in: <a href="https://docs.rs/solana-program/1.7.11/solana_program/account_info/index.html">https://docs.rs/solana-program/1.7.11/solana_program/account_info/index.html</a></p>
+</blockquote>
+<h3 id="instruction">instruction</h3>
+<p>This library defines instructions in solana. What we explained before that in our program we recieve instructions we dont create it. So this library help us to create instructions with testing purposes.
+We have two main structs here, AccountMeta and Instruction.</p>
+<h4 id="accountmeta">AccountMeta</h4>
+<p>This struct is the metadata that a instruction used.</p>
+<pre class="hljs"><code><span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">AccountMeta</span></span> {
+    <span class="hljs-keyword">pub</span> pubkey: Pubkey,
+    <span class="hljs-keyword">pub</span> is_signer: <span class="hljs-built_in">bool</span>,
+    <span class="hljs-keyword">pub</span> is_writable: <span class="hljs-built_in">bool</span>,
+}
+</code></pre>
+<p>Fields
+pubkey: Pubkey
+An account’s public key</p>
+<p>is_signer: bool
+True if an Instruction requires a Transaction signature matching pubkey.</p>
+<p>is_writable: bool
+True if the pubkey can be loaded as a read-write account.</p>
+<h4 id="instruction-2">Instruction</h4>
+<p>This struct defines a instruction</p>
+<pre class="hljs"><code><span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Instruction</span></span> {
+    <span class="hljs-keyword">pub</span> program_id: Pubkey,
+    <span class="hljs-keyword">pub</span> accounts: <span class="hljs-built_in">Vec</span>&lt;AccountMeta&gt;,
+    <span class="hljs-keyword">pub</span> data: <span class="hljs-built_in">Vec</span>&lt;<span class="hljs-built_in">u8</span>&gt;,
+}
+</code></pre>
+<p>Fields
+program_id: Pubkey
+Pubkey of the instruction processor that executes this instruction</p>
+<p>accounts: Vec&lt;AccountMeta&gt;
+Metadata for what accounts should be passed to the instruction processor</p>
+<p>data: Vec&lt;u8&gt;
+Serialized data passed to the instruction processor</p>
+<blockquote>
+<p>You can find mnore: <a href="https://docs.rs/solana-program/1.7.11/solana_program/instruction/index.html">https://docs.rs/solana-program/1.7.11/solana_program/instruction/index.html</a></p>
+</blockquote>
+<h3 id="entrypoint">entrypoint</h3>
+<p>From entrypoint we will focus in the entrypoint! macro and the ProgramResult</p>
+<h4 id="entrypoint!">entrypoint!</h4>
+<p>Is a macro that the defines the entrypoint of our program</p>
+<h4 id="programresult">ProgramResult</h4>
+<p>You will use it all the time. Is a generic type that can be () or a ProgramError</p>
+<pre class="hljs"><code><span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">type</span> <span class="hljs-title">ProgramResult</span></span> = ResultGeneric&lt;(), ProgramError&gt;;
+</code></pre>
+<blockquote>
+<p>You have all info here: <a href="https://docs.rs/solana-program/1.7.11/solana_program/entrypoint/index.html">https://docs.rs/solana-program/1.7.11/solana_program/entrypoint/index.html</a></p>
+</blockquote>
+<h3 id="pubkey">pubKey</h3>
+<p>This crate is extremely important because you are defining the struct that locate addresses in solana blockchain. It implements a buch of functions and traits. This docs are great if you want undertand how you can create, find and log accounts inside solana check this link.</p>
+<blockquote>
+<p>You have all info here: <a href="https://docs.rs/solana-program/1.7.11/solana_program/pubkey/struct.Pubkey.html">https://docs.rs/solana-program/1.7.11/solana_program/pubkey/struct.Pubkey.html</a></p>
+</blockquote>
+<h3 id="sysvar">sysvar</h3>
+<p>This is a big crate but we will use rent crate and Sysvar trait</p>
+<h4 id="rent">rent</h4>
+<p>This account contains the current cluster rent</p>
+<p>::rent::Rent</p>
+<pre class="hljs"><code><span class="hljs-meta">#[repr(C)]</span>
+<span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Rent</span></span> {
+    <span class="hljs-keyword">pub</span> lamports_per_byte_year: <span class="hljs-built_in">u64</span>,
+    <span class="hljs-keyword">pub</span> exemption_threshold: <span class="hljs-built_in">f64</span>,
+    <span class="hljs-keyword">pub</span> burn_percent: <span class="hljs-built_in">u8</span>,
+}
+</code></pre>
+<p>Fields
+lamports_per_byte_year: u64
+Rental rate</p>
+<p>exemption_threshold: f64
+exemption threshold, in years</p>
+<p>burn_percent: u8</p>
+<blockquote>
+<p>Struct solana_program::rent::Rent <a href="https://docs.rs/solana-program/1.7.11/solana_program/rent/struct.Rent.html">https://docs.rs/solana-program/1.7.11/solana_program/rent/struct.Rent.html</a></p>
+</blockquote>
+<h4 id="sysvar-2">Sysvar</h4>
+<pre class="hljs"><code><span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">trait</span> <span class="hljs-title">Sysvar</span></span>: SysvarId + <span class="hljs-built_in">Default</span> + <span class="hljs-built_in">Sized</span> + Serialize + DeserializeOwned {
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">size_of</span></span>() -&gt; <span class="hljs-built_in">usize</span> { ... }
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">from_account_info</span></span>(
+        account_info: &amp;AccountInfo&lt;<span class="hljs-symbol">&#x27;_</span>&gt;
+    ) -&gt; <span class="hljs-built_in">Result</span>&lt;<span class="hljs-keyword">Self</span>, ProgramError&gt; { ... }
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">to_account_info</span></span>(&amp;<span class="hljs-keyword">self</span>, account_info: &amp;<span class="hljs-keyword">mut</span> AccountInfo&lt;<span class="hljs-symbol">&#x27;_</span>&gt;) -&gt; <span class="hljs-built_in">Option</span>&lt;()&gt; { ... }
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">get</span></span>() -&gt; <span class="hljs-built_in">Result</span>&lt;<span class="hljs-keyword">Self</span>, ProgramError&gt; { ... }
+}
+</code></pre>
+<blockquote>
+<p>Trait solana_program::sysvar::Sysvar <a href="https://docs.rs/solana-program/1.7.11/solana_program/sysvar/trait.Sysvar.html">https://docs.rs/solana-program/1.7.11/solana_program/sysvar/trait.Sysvar.html</a></p>
+</blockquote>
+<blockquote>
+<p>You have all info here: <a href="https://docs.rs/solana-program/1.7.11/solana_program/sysvar/index.html">https://docs.rs/solana-program/1.7.11/solana_program/sysvar/index.html</a></p>
+</blockquote>
+<h3 id="program_pack">program_pack</h3>
+<p>State transition types. We have three traits:</p>
+<ul>
+<li>IsInitialized check if a program account state is initialized</li>
+<li>Pack Safely and efficietly (de)serialize account state</li>
+<li>Sealed Implementors must have a known size</li>
+</ul>
+<p>You must implemented in your own state structs.</p>
+<h3 id="msg">msg</h3>
+<p>!msg is a macro for logging</p>
+<h3 id="program_option">program_option</h3>
+<p>COption is a type for optional attributes. It can be Some() or None()</p>
+<h3 id="program_error">program_error</h3>
+<p>Is a enum a program error</p>
+<h3 id="decode_error">decode_error</h3>
+<p>Is used to build our own error</p>
+<blockquote>
+<p>Ok we got all basic stuff from the solana_program crate. This will help to defines the basics types a functionalities and make your contract more standard</p>
+</blockquote>
+<h2 id="lib.rs"><a href="http://lib.rs">lib.rs</a></h2>
+<p>Your lib is your personal crate. You must define here all your mods. Is common to set your program id and some helpers.</p>
+<pre class="hljs"><code><span class="hljs-meta">#![deny(missing_docs)]</span>
+<span class="hljs-meta">#![cfg_attr(not(test), forbid(unsafe_code))]</span>
+
+<span class="hljs-comment">//! An ERC20-like Token program for the Solana blockchain</span>
+
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">mod</span> error;
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">mod</span> instruction;
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">mod</span> native_mint;
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">mod</span> processor;
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">mod</span> state;
+
+<span class="hljs-meta">#[cfg(not(feature = <span class="hljs-meta-string">&quot;no-entrypoint&quot;</span>))]</span>
+<span class="hljs-keyword">mod</span> entrypoint;
+
+<span class="hljs-comment">// Export current sdk types for downstream users building with a different sdk version</span>
+<span class="hljs-keyword">pub</span> <span class="hljs-keyword">use</span> solana_program;
+<span class="hljs-keyword">use</span> solana_program::{entrypoint::ProgramResult, program_error::ProgramError, pubkey::Pubkey};
+
+<span class="hljs-comment">/// Convert the UI representation of a token amount (using the decimals field defined in its mint)</span>
+<span class="hljs-comment">/// to the raw amount</span>
+<span class="hljs-keyword">pub</span> <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">ui_amount_to_amount</span></span>(ui_amount: <span class="hljs-built_in">f64</span>, decimals: <span class="hljs-built_in">u8</span>) -&gt; <span class="hljs-built_in">u64</span> {
+    (ui_amount * <span class="hljs-number">10_usize</span>.pow(decimals <span class="hljs-keyword">as</span> <span class="hljs-built_in">u32</span>) <span class="hljs-keyword">as</span> <span class="hljs-built_in">f64</span>) <span class="hljs-keyword">as</span> <span class="hljs-built_in">u64</span>
+}
+
+<span class="hljs-comment">/// Convert a raw amount to its UI representation (using the decimals field defined in its mint)</span>
+<span class="hljs-keyword">pub</span> <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">amount_to_ui_amount</span></span>(amount: <span class="hljs-built_in">u64</span>, decimals: <span class="hljs-built_in">u8</span>) -&gt; <span class="hljs-built_in">f64</span> {
+    amount <span class="hljs-keyword">as</span> <span class="hljs-built_in">f64</span> / <span class="hljs-number">10_usize</span>.pow(decimals <span class="hljs-keyword">as</span> <span class="hljs-built_in">u32</span>) <span class="hljs-keyword">as</span> <span class="hljs-built_in">f64</span>
+}
+
+solana_program::declare_id!(<span class="hljs-string">&quot;TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA&quot;</span>);
+
+<span class="hljs-comment">/// Checks that the supplied program ID is the correct one for SPL-token</span>
+<span class="hljs-keyword">pub</span> <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">check_program_account</span></span>(spl_token_program_id: &amp;Pubkey) -&gt; ProgramResult {
+    <span class="hljs-keyword">if</span> spl_token_program_id != &amp;id() {
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">Err</span>(ProgramError::IncorrectProgramId);
+    }
+    <span class="hljs-literal">Ok</span>(())
+}
+</code></pre>
+<h2 id="entrypoint.rs"><a href="http://entrypoint.rs">entrypoint.rs</a></h2>
+<p>The entrypoint cant be other think that the entrypoint of our program. You just need you to define a function that call the processor and put it in a entrypoint! macro. What you are doing is setting the entrypoint of your program and pass some data to your processor and this one will deserialze the instruction and execute it.</p>
+<pre class="hljs"><code><span class="hljs-comment">//! Program entrypoint</span>
+
+<span class="hljs-keyword">use</span> crate::{error::TokenError, processor::Processor};
+<span class="hljs-keyword">use</span> solana_program::{
+    account_info::AccountInfo,
+    entrypoint,
+    entrypoint::ProgramResult,
+    program_error::PrintProgramError,
+    pubkey::Pubkey,
+};
+
+entrypoint!(process_instruction);
+<span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">process_instruction</span></span>(
+    program_id: &amp;Pubkey,
+    accounts: &amp;[AccountInfo],
+    instruction_data: &amp;[<span class="hljs-built_in">u8</span>],
+) -&gt; ProgramResult {
+    <span class="hljs-keyword">if</span> <span class="hljs-keyword">let</span> <span class="hljs-literal">Err</span>(error) = Processor::process(program_id, accounts, instruction_data) {
+        <span class="hljs-comment">// catch the error so we can print it</span>
+        error.print::&lt;TokenError&gt;();
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">Err</span>(error);
+    }
+    <span class="hljs-literal">Ok</span>(())
+}
+</code></pre>
+<h2 id="error.rs"><a href="http://error.rs">error.rs</a></h2>
+<p>For implementing error for our smart contract we can use the ProgramError enum of the solana_program crate. But we can create our custom errors.
+For our error we just need to create an Error enum that implements some traits. To implements so basic traits in rust you can use #[derive()] attribute in the top of your enum or struct. For our enum we will implement Clone, Debug, Eq, Error, FromPrimitive, ParitalEq.</p>
+<ul>
+<li>Clone make your erros clonables.</li>
+<li>Debug give you format for log your errors.</li>
+<li>Eq makes your enum comparable.</li>
+<li>PartialEq like Eq but less restrictive</li>
+<li>Error ?</li>
+<li>FromPrimitive A generic trait for converting a number to a value</li>
+</ul>
+<p>For each error inside the enum you mark it as an error using #[error(“custom name”)] attribute</p>
+<p>Now we must impl our custom errors into the standar enum of solana_program. We impl DecodeError to our custom enum and then implement our custom enum for the solana_program::ProgramError</p>
+<pre class="hljs"><code><span class="hljs-keyword">impl</span> <span class="hljs-built_in">From</span>&lt;TokenError&gt; <span class="hljs-keyword">for</span> ProgramError {
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">from</span></span>(e: TokenError) -&gt; <span class="hljs-keyword">Self</span> {
+        ProgramError::Custom(e <span class="hljs-keyword">as</span> <span class="hljs-built_in">u32</span>)
+    }
+}
+<span class="hljs-keyword">impl</span>&lt;T&gt; DecodeError&lt;T&gt; <span class="hljs-keyword">for</span> TokenError {
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">type_of</span></span>() -&gt; &amp;<span class="hljs-symbol">&#x27;static</span> <span class="hljs-built_in">str</span> {
+        <span class="hljs-string">&quot;TokenError&quot;</span>
+    }
+}
+</code></pre>
+<h2 id="state.rs"><a href="http://state.rs">state.rs</a></h2>
+<p>The state of our program is really important. Its were the data for our smart contracts is. Main main idea is that we will create our own state structs and we will impl some traits to apply some basic funcionality like (de)serialize.
+I will show you Mint state struct from slp token program as example:</p>
+<pre class="hljs"><code><span class="hljs-comment">//! State transition types</span>
+
+<span class="hljs-keyword">use</span> crate::instruction::MAX_SIGNERS;
+<span class="hljs-keyword">use</span> arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+<span class="hljs-keyword">use</span> num_enum::TryFromPrimitive;
+<span class="hljs-keyword">use</span> solana_program::{
+    program_error::ProgramError,
+    program_option::COption,
+    program_pack::{IsInitialized, Pack, Sealed},
+    pubkey::Pubkey,
+};
+
+<span class="hljs-comment">/// Mint data.</span>
+<span class="hljs-meta">#[repr(C)]</span>
+<span class="hljs-meta">#[derive(Clone, Copy, Debug, Default, PartialEq)]</span>
+<span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Mint</span></span> { <span class="hljs-number">1</span>
+    <span class="hljs-comment">/// Optional authority used to mint new tokens. The mint authority may only be provided during</span>
+    <span class="hljs-comment">/// mint creation. If no mint authority is present then the mint has a fixed supply and no</span>
+    <span class="hljs-comment">/// further tokens may be minted.</span>
+    <span class="hljs-keyword">pub</span> mint_authority: COption&lt;Pubkey&gt;,
+    <span class="hljs-comment">/// Total supply of tokens.</span>
+    <span class="hljs-keyword">pub</span> supply: <span class="hljs-built_in">u64</span>,
+    <span class="hljs-comment">/// Number of base 10 digits to the right of the decimal place.</span>
+    <span class="hljs-keyword">pub</span> decimals: <span class="hljs-built_in">u8</span>,
+    <span class="hljs-comment">/// Is `true` if this structure has been initialized</span>
+    <span class="hljs-keyword">pub</span> is_initialized: <span class="hljs-built_in">bool</span>,
+    <span class="hljs-comment">/// Optional authority to freeze token accounts.</span>
+    <span class="hljs-keyword">pub</span> freeze_authority: COption&lt;Pubkey&gt;,
+}
+<span class="hljs-keyword">impl</span> Sealed <span class="hljs-keyword">for</span> Mint {} <span class="hljs-number">2</span>
+<span class="hljs-keyword">impl</span> IsInitialized <span class="hljs-keyword">for</span> Mint { <span class="hljs-number">3</span>
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">is_initialized</span></span>(&amp;<span class="hljs-keyword">self</span>) -&gt; <span class="hljs-built_in">bool</span> {
+        <span class="hljs-keyword">self</span>.is_initialized
+    }
+}
+<span class="hljs-keyword">impl</span> Pack <span class="hljs-keyword">for</span> Mint { <span class="hljs-number">4</span>
+    <span class="hljs-keyword">const</span> LEN: <span class="hljs-built_in">usize</span> = <span class="hljs-number">82</span>;
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">unpack_from_slice</span></span>(src: &amp;[<span class="hljs-built_in">u8</span>]) -&gt; <span class="hljs-built_in">Result</span>&lt;<span class="hljs-keyword">Self</span>, ProgramError&gt; { <span class="hljs-number">5</span>
+        <span class="hljs-keyword">let</span> src = array_ref![src, <span class="hljs-number">0</span>, <span class="hljs-number">82</span>]; <span class="hljs-number">6</span>
+        <span class="hljs-keyword">let</span> (mint_authority, supply, decimals, is_initialized, freeze_authority) =
+            array_refs![src, <span class="hljs-number">36</span>, <span class="hljs-number">8</span>, <span class="hljs-number">1</span>, <span class="hljs-number">1</span>, <span class="hljs-number">36</span>];
+        <span class="hljs-keyword">let</span> mint_authority = unpack_coption_key(mint_authority)?;
+        <span class="hljs-keyword">let</span> supply = <span class="hljs-built_in">u64</span>::from_le_bytes(*supply);
+        <span class="hljs-keyword">let</span> decimals = decimals[<span class="hljs-number">0</span>];
+        <span class="hljs-keyword">let</span> is_initialized = <span class="hljs-keyword">match</span> is_initialized {
+            [<span class="hljs-number">0</span>] =&gt; <span class="hljs-literal">false</span>,
+            [<span class="hljs-number">1</span>] =&gt; <span class="hljs-literal">true</span>,
+            _ =&gt; <span class="hljs-keyword">return</span> <span class="hljs-literal">Err</span>(ProgramError::InvalidAccountData),
+        };
+        <span class="hljs-keyword">let</span> freeze_authority = unpack_coption_key(freeze_authority)?;
+        <span class="hljs-literal">Ok</span>(Mint {
+            mint_authority,
+            supply,
+            decimals,
+            is_initialized,
+            freeze_authority,
+        })
+    }
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">pack_into_slice</span></span>(&amp;<span class="hljs-keyword">self</span>, dst: &amp;<span class="hljs-keyword">mut</span> [<span class="hljs-built_in">u8</span>]) { <span class="hljs-number">7</span>
+        <span class="hljs-keyword">let</span> dst = array_mut_ref![dst, <span class="hljs-number">0</span>, <span class="hljs-number">82</span>]; <span class="hljs-number">8</span>
+        <span class="hljs-keyword">let</span> (
+            mint_authority_dst,
+            supply_dst,
+            decimals_dst,
+            is_initialized_dst,
+            freeze_authority_dst,
+        ) = mut_array_refs![dst, <span class="hljs-number">36</span>, <span class="hljs-number">8</span>, <span class="hljs-number">1</span>, <span class="hljs-number">1</span>, <span class="hljs-number">36</span>]; <span class="hljs-number">8</span>
+        <span class="hljs-keyword">let</span> &amp;Mint { <span class="hljs-number">9</span>
+            <span class="hljs-keyword">ref</span> mint_authority,
+            supply,
+            decimals,
+            is_initialized,
+            <span class="hljs-keyword">ref</span> freeze_authority,
+        } = <span class="hljs-keyword">self</span>;
+        pack_coption_key(mint_authority, mint_authority_dst);
+        *supply_dst = supply.to_le_bytes();
+        decimals_dst[<span class="hljs-number">0</span>] = decimals;
+        is_initialized_dst[<span class="hljs-number">0</span>] = is_initialized <span class="hljs-keyword">as</span> <span class="hljs-built_in">u8</span>;
+        pack_coption_key(freeze_authority, freeze_authority_dst);
+    }
+}
+</code></pre>
+<p>1 For our Mint we need a mint_authority, sypply, decimals, is_initialized and a freeze_authority all explained.
+2 Implementation of Sealed for Mint.
+3 IsInitialized is a getter of is_initialized.
+4 Is the implementation of (de)serializing for our state
+5 In unpack_from_slice we recieve a and array of u8 and the result is a Mint State.
+6 You can use array_refs to generate a series of array references to an input array reference. The idea is if you want to break an array into a series of contiguous and non-overlapping arrays. array_refs is a bit funny in that it insists on slicing up the entire array. This is intentional, as I find it handy to make me ensure that my sub-arrays add up to the entire array. This macro will never panic, since the sizes are all checked at compile time. So we use array_refs! macro to extract the data we want from the input and creating our local variables for them, we must unpack the non primitive types and return our Mint State.
+7 In pack_into_slice we recieve a Mint State and a dst(dynamic sized types) that it will be the data. Dst are specials types with a size that is known only at run-time, like a trait object or a slice. 8 First we will use array_mut_ref! and mut_array_refs! macros like before to extract the data from dst variable. 9 Then we set the data structure Mint, pack the mints authoritys, get the memory representation of our supply, set our decimals, set our is_initialized as a u8 and pack the freezes authorities. When you pack you changes the state.</p>
+<p>Note that unlike array_ref!, array_refs requires that the first argument be an array reference. The following arguments are the lengths of each subarray you wish a reference to. The total of these arguments must equal the size of the array itself.</p>
+<h2 id="instruction.rs"><a href="http://instruction.rs">instruction.rs</a></h2>
+<p>In the instruction file is the enums of the funcionality of your program and must implement (de)serialization. You must think in you will not have only one instruction inside a enum Instruction type, you will possible have tens of instructions. So you must a system for identify what instruction is when you deserialize it. The standar is putting a number in the buffer. When you deseriale your instruction the firsts thing that you will do is extract that number to identify what instrcution is.
+Usually you can create functions in this file that craft instruction for testing purposes.</p>
+<pre class="hljs"><code><span class="hljs-meta">#[repr(C)]</span>
+<span class="hljs-meta">#[derive(Clone, Debug, PartialEq)]</span>
+<span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">TokenInstruction</span></span> {
+    <span class="hljs-comment">/// Initializes a new mint and optionally deposits all the newly minted</span>
+    <span class="hljs-comment">/// tokens in an account.</span>
+    <span class="hljs-comment">///</span>
+    <span class="hljs-comment">/// The `InitializeMint` instruction requires no signers and MUST be</span>
+    <span class="hljs-comment">/// included within the same Transaction as the system program&#x27;s</span>
+    <span class="hljs-comment">/// `CreateAccount` instruction that creates the account being initialized.</span>
+    <span class="hljs-comment">/// Otherwise another party can acquire ownership of the uninitialized</span>
+    <span class="hljs-comment">/// account.</span>
+    <span class="hljs-comment">///</span>
+    <span class="hljs-comment">/// Accounts expected by this instruction:</span>
+    <span class="hljs-comment">///</span>
+    <span class="hljs-comment">///   0. `[writable]` The mint to initialize.</span>
+    <span class="hljs-comment">///   1. `[]` Rent sysvar</span>
+    <span class="hljs-comment">///</span>
+    InitializeMint {
+        <span class="hljs-comment">/// Number of base 10 digits to the right of the decimal place.</span>
+        decimals: <span class="hljs-built_in">u8</span>,
+        <span class="hljs-comment">/// The authority/multisignature to mint tokens.</span>
+        mint_authority: Pubkey,
+        <span class="hljs-comment">/// The freeze authority/multisignature of the mint.</span>
+        freeze_authority: COption&lt;Pubkey&gt;,
+    }
+}
+<span class="hljs-keyword">impl</span> TokenInstruction {
+    <span class="hljs-comment">/// Unpacks a byte buffer into a [TokenInstruction](enum.TokenInstruction.html).</span>
+    <span class="hljs-keyword">pub</span> <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">unpack</span></span>(input: &amp;[<span class="hljs-built_in">u8</span>]) -&gt; <span class="hljs-built_in">Result</span>&lt;<span class="hljs-keyword">Self</span>, ProgramError&gt; {
+        <span class="hljs-keyword">use</span> TokenError::InvalidInstruction;
+
+        <span class="hljs-keyword">let</span> (&amp;tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
+        <span class="hljs-literal">Ok</span>(<span class="hljs-keyword">match</span> tag {
+            <span class="hljs-number">0</span> =&gt; {
+                <span class="hljs-keyword">let</span> (&amp;decimals, rest) = rest.split_first().ok_or(InvalidInstruction)?;
+                <span class="hljs-keyword">let</span> (mint_authority, rest) = Self::unpack_pubkey(rest)?;
+                <span class="hljs-keyword">let</span> (freeze_authority, _rest) = Self::unpack_pubkey_option(rest)?;
+                Self::InitializeMint {
+                    mint_authority,
+                    freeze_authority,
+                    decimals,
+                }
+            }
+            _ =&gt; <span class="hljs-keyword">return</span> <span class="hljs-literal">Err</span>(TokenError::InvalidInstruction.into()),
+        })
+    }
+
+    <span class="hljs-comment">/// Packs a [TokenInstruction](enum.TokenInstruction.html) into a byte buffer.</span>
+    <span class="hljs-keyword">pub</span> <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">pack</span></span>(&amp;<span class="hljs-keyword">self</span>) -&gt; <span class="hljs-built_in">Vec</span>&lt;<span class="hljs-built_in">u8</span>&gt; {
+        <span class="hljs-keyword">let</span> <span class="hljs-keyword">mut</span> buf = <span class="hljs-built_in">Vec</span>::with_capacity(size_of::&lt;<span class="hljs-keyword">Self</span>&gt;());
+        <span class="hljs-keyword">match</span> <span class="hljs-keyword">self</span> {
+            &amp;Self::InitializeMint {
+                <span class="hljs-keyword">ref</span> mint_authority,
+                <span class="hljs-keyword">ref</span> freeze_authority,
+                decimals,
+            } =&gt; {
+                buf.push(<span class="hljs-number">0</span>);
+                buf.push(decimals);
+                buf.extend_from_slice(mint_authority.as_ref());
+                Self::pack_pubkey_option(freeze_authority, &amp;<span class="hljs-keyword">mut</span> buf);
+            }
+        };
+        buf
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">unpack_pubkey</span></span>(input: &amp;[<span class="hljs-built_in">u8</span>]) -&gt; <span class="hljs-built_in">Result</span>&lt;(Pubkey, &amp;[<span class="hljs-built_in">u8</span>]), ProgramError&gt; {
+        <span class="hljs-keyword">if</span> input.len() &gt;= <span class="hljs-number">32</span> {
+            <span class="hljs-keyword">let</span> (key, rest) = input.split_at(<span class="hljs-number">32</span>);
+            <span class="hljs-keyword">let</span> pk = Pubkey::new(key);
+            <span class="hljs-literal">Ok</span>((pk, rest))
+        } <span class="hljs-keyword">else</span> {
+            <span class="hljs-literal">Err</span>(TokenError::InvalidInstruction.into())
+        }
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">unpack_pubkey_option</span></span>(input: &amp;[<span class="hljs-built_in">u8</span>]) -&gt; <span class="hljs-built_in">Result</span>&lt;(COption&lt;Pubkey&gt;, &amp;[<span class="hljs-built_in">u8</span>]), ProgramError&gt; {
+        <span class="hljs-keyword">match</span> input.split_first() {
+            <span class="hljs-built_in">Option</span>::<span class="hljs-literal">Some</span>((&amp;<span class="hljs-number">0</span>, rest)) =&gt; <span class="hljs-literal">Ok</span>((COption::<span class="hljs-literal">None</span>, rest)),
+            <span class="hljs-built_in">Option</span>::<span class="hljs-literal">Some</span>((&amp;<span class="hljs-number">1</span>, rest)) <span class="hljs-keyword">if</span> rest.len() &gt;= <span class="hljs-number">32</span> =&gt; {
+                <span class="hljs-keyword">let</span> (key, rest) = rest.split_at(<span class="hljs-number">32</span>);
+                <span class="hljs-keyword">let</span> pk = Pubkey::new(key);
+                <span class="hljs-literal">Ok</span>((COption::<span class="hljs-literal">Some</span>(pk), rest))
+            }
+            _ =&gt; <span class="hljs-literal">Err</span>(TokenError::InvalidInstruction.into()),
+        }
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">pack_pubkey_option</span></span>(value: &amp;COption&lt;Pubkey&gt;, buf: &amp;<span class="hljs-keyword">mut</span> <span class="hljs-built_in">Vec</span>&lt;<span class="hljs-built_in">u8</span>&gt;) {
+        <span class="hljs-keyword">match</span> *value {
+            COption::<span class="hljs-literal">Some</span>(<span class="hljs-keyword">ref</span> key) =&gt; {
+                buf.push(<span class="hljs-number">1</span>);
+                buf.extend_from_slice(&amp;key.to_bytes());
+            }
+            COption::<span class="hljs-literal">None</span> =&gt; buf.push(<span class="hljs-number">0</span>),
+        }
+    }
+}
+
+&gt; Is very import that explain what each instruction and variables does. Its can be extremely helpfull <span class="hljs-keyword">for</span> other devs.
+</code></pre>
+<h2 id="processor.rs"><a href="http://processor.rs">processor.rs</a></h2>
+<p>Here is were the magic happens. In this file you will define a Processor struct and you will implement it all instructions processor functions. The standar is using a entry function called process and inside deserialize the inputs and match the processor function it needs.</p>
+<pre class="hljs"><code><span class="hljs-keyword">pub</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Processor</span></span> {}
+<span class="hljs-keyword">impl</span> Processor {
+
+<span class="hljs-comment">/// Processes an [Instruction](enum.Instruction.html).</span>
+    <span class="hljs-keyword">pub</span> <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">process</span></span>(program_id: &amp;Pubkey, accounts: &amp;[AccountInfo], input: &amp;[<span class="hljs-built_in">u8</span>]) -&gt; ProgramResult {
+        <span class="hljs-keyword">let</span> instruction = TokenInstruction::unpack(input)?;
+
+        <span class="hljs-keyword">match</span> instruction {
+            TokenInstruction::InitializeMint {
+                decimals,
+                mint_authority,
+                freeze_authority,
+            } =&gt; {
+                msg!(<span class="hljs-string">&quot;Instruction: InitializeMint&quot;</span>);
+                Self::process_initialize_mint(accounts, decimals, mint_authority, freeze_authority)
+            }
+        }
+    }
+
+    <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">_process_initialize_mint</span></span>(
+        accounts: &amp;[AccountInfo],
+        decimals: <span class="hljs-built_in">u8</span>,
+        mint_authority: Pubkey,
+        freeze_authority: COption&lt;Pubkey&gt;,
+        rent_sysvar_account: <span class="hljs-built_in">bool</span>,
+    ) -&gt; ProgramResult {
+        <span class="hljs-keyword">let</span> account_info_iter = &amp;<span class="hljs-keyword">mut</span> accounts.iter();
+        <span class="hljs-keyword">let</span> mint_info = next_account_info(account_info_iter)?;
+        <span class="hljs-keyword">let</span> mint_data_len = mint_info.data_len();
+        <span class="hljs-keyword">let</span> rent = <span class="hljs-keyword">if</span> rent_sysvar_account {
+            Rent::from_account_info(next_account_info(account_info_iter)?)?
+        } <span class="hljs-keyword">else</span> {
+            Rent::get()?
+        };
+
+        <span class="hljs-keyword">let</span> <span class="hljs-keyword">mut</span> mint = Mint::unpack_unchecked(&amp;mint_info.data.borrow())?;
+        <span class="hljs-keyword">if</span> mint.is_initialized {
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">Err</span>(TokenError::AlreadyInUse.into());
+        }
+
+        <span class="hljs-keyword">if</span> !rent.is_exempt(mint_info.lamports(), mint_data_len) {
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">Err</span>(TokenError::NotRentExempt.into());
+        }
+
+        mint.mint_authority = COption::<span class="hljs-literal">Some</span>(mint_authority);
+        mint.decimals = decimals;
+        mint.is_initialized = <span class="hljs-literal">true</span>;
+        mint.freeze_authority = freeze_authority;
+
+        Mint::pack(mint, &amp;<span class="hljs-keyword">mut</span> mint_info.data.borrow_mut())?;
+
+        <span class="hljs-literal">Ok</span>(())
+    }
+
+    <span class="hljs-comment">/// Processes an [InitializeMint](enum.TokenInstruction.html) instruction.</span>
+    <span class="hljs-keyword">pub</span> <span class="hljs-function"><span class="hljs-keyword">fn</span> <span class="hljs-title">process_initialize_mint</span></span>(
+        accounts: &amp;[AccountInfo],
+        decimals: <span class="hljs-built_in">u8</span>,
+        mint_authority: Pubkey,
+        freeze_authority: COption&lt;Pubkey&gt;,
+    ) -&gt; ProgramResult {
+        Self::_process_initialize_mint(accounts, decimals, mint_authority, freeze_authority, <span class="hljs-literal">true</span>)
+    }
+}
+</code></pre> </section> <section id="article-navigation"> <div class="article-navigation-item article-navigation-next"> <a href="/article/1.html"> <div class="article-navigation-arrow article-navigation-next">＜</div> <div class="article-navigation-content article-navigation-next"> <p class="article-navigation-title">Lorem ipsum 1</p> <p class="article-navigation-subtitle">Sed sit amet arcu a diam tincidunt porta</p> </div> </a> </div> </section> <section id="article-list-button-container"> <a href="/articles.html"> <div id="article-list-button">📚</div> </a> </section> </article> </main> <script defer src="/init.ddb7c0df.js"></script>
+</body></html>
